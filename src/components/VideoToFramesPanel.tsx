@@ -5,6 +5,7 @@ import {
   Image as ImageIcon,
   Layers,
   RefreshCw,
+  Send,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { triggerBytesDownload } from '../lib/download'
@@ -22,6 +23,7 @@ import {
   getFileExtension,
   sanitizeBaseName,
 } from '../lib/format'
+import { stageMediaToMcp } from '../lib/studioApi'
 import { createFramesZip } from '../lib/zipFrames'
 import type {
   EngineProgress,
@@ -94,6 +96,9 @@ export function VideoToFramesPanel({
 
   const [progress, setProgress] = useState<EngineProgress>(IDLE_PROGRESS)
   const [result, setResult] = useState<ExtractedZipBundle | null>(null)
+  const [isStagingMcp, setIsStagingMcp] = useState(false)
+  const [mcpStageMessage, setMcpStageMessage] = useState<string | null>(null)
+  const [mcpStageError, setMcpStageError] = useState<string | null>(null)
 
   const videoUrl = useMemo(
     () => (videoFile ? URL.createObjectURL(videoFile) : null),
@@ -134,6 +139,8 @@ export function VideoToFramesPanel({
     setJobError(null)
     setPreviewFailed(false)
     setResult(null)
+    setMcpStageMessage(null)
+    setMcpStageError(null)
     setVideoFile(file)
     setVideoMeta({
       name: file.name,
@@ -238,6 +245,35 @@ export function VideoToFramesPanel({
       type: 'application/zip',
     })
     onSendZipToVideo(zipFile)
+  }
+
+  const handleSendToClaudeMcp = async () => {
+    if (!result || isStagingMcp) return
+    setIsStagingMcp(true)
+    setMcpStageError(null)
+    setMcpStageMessage(null)
+    try {
+      const staged = await stageMediaToMcp({
+        sourceName: videoFile?.name ?? result.zipFileName,
+        fps: result.fpsUsed,
+        width: result.width,
+        height: result.height,
+        frames: result.frames,
+        videoFile,
+      })
+      const flowNote = staged.flowSummary
+        ? ` + music flow (${staged.flowSummary.bpm} BPM, ${staged.flowSummary.sections.length} sections)`
+        : ''
+      setMcpStageMessage(
+        `Staged ${staged.frameCount} sample frames${flowNote} to Claude MCP! Ask Claude Web to call framer_get_staged_media.`,
+      )
+    } catch (error) {
+      setMcpStageError(
+        formatErrorMessage(error, 'Could not stage frames to Claude MCP.'),
+      )
+    } finally {
+      setIsStagingMcp(false)
+    }
   }
 
   return (
@@ -554,6 +590,17 @@ export function VideoToFramesPanel({
               <button
                 type="button"
                 className="btn btn-secondary"
+                onClick={() => void handleSendToClaudeMcp()}
+                disabled={isBusy || isStagingMcp}
+              >
+                <Send size={16} />
+                {isStagingMcp
+                  ? 'Sending to MCP…'
+                  : 'Send to Claude MCP'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
                 onClick={handleSendToConverter}
                 disabled={isBusy}
               >
@@ -570,6 +617,13 @@ export function VideoToFramesPanel({
               </button>
             </div>
           </div>
+
+          {mcpStageMessage ? (
+            <div className="alert-banner is-info">{mcpStageMessage}</div>
+          ) : null}
+          {mcpStageError ? (
+            <div className="alert-banner is-error">{mcpStageError}</div>
+          ) : null}
 
           <FrameGallery
             key={result.frames[0]?.id ?? result.zipFileName}

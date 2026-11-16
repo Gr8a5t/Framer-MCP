@@ -27,6 +27,7 @@ export interface EncodeVideoArgsOptions {
   resolution?: ResolutionPreset
   targetWidth?: number
   targetHeight?: number
+  audioInputPath?: string
 }
 
 const JPEG_QSCALE_MAP: Record<JpegQualityPreset, number> = {
@@ -123,9 +124,17 @@ export function buildEncodeVideoArgs(
     '1',
     '-i',
     options.inputPattern,
-    '-vf',
-    vfParts.join(','),
   ]
+
+  if (options.audioInputPath) {
+    args.push('-i', options.audioInputPath)
+  }
+
+  args.push('-vf', vfParts.join(','))
+
+  if (options.audioInputPath) {
+    args.push('-map', '0:v:0', '-map', '1:a:0')
+  }
 
   if (options.format === 'mp4') {
     args.push(
@@ -137,10 +146,11 @@ export function buildEncodeVideoArgs(
       MP4_CRF_MAP[options.quality],
       '-pix_fmt',
       'yuv420p',
-      '-movflags',
-      '+faststart',
-      options.outputPath,
     )
+    if (options.audioInputPath) {
+      args.push('-c:a', 'aac', '-b:a', '192k', '-shortest')
+    }
+    args.push('-movflags', '+faststart', options.outputPath)
     return args
   }
 
@@ -158,7 +168,10 @@ export function buildEncodeVideoArgs(
     '4',
     '-pix_fmt',
     'yuv420p',
-    options.outputPath,
   )
+  if (options.audioInputPath) {
+    args.push('-c:a', 'libopus', '-b:a', '160k', '-shortest')
+  }
+  args.push(options.outputPath)
   return args
 }

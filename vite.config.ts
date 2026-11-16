@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import type { Plugin, ViteDevServer } from 'vite'
 import { defineConfig } from 'vite'
+import { createFramerMiddleware } from './src/server/studioRouter.ts'
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url))
 const ffmpegCoreDir = path.resolve(
@@ -79,9 +80,37 @@ function ffmpegCoreAssetsPlugin(): Plugin {
   }
 }
 
+function framerMcpAndStudioPlugin(): Plugin {
+  const { middleware } = createFramerMiddleware(rootDir)
+
+  return {
+    name: 'framer-mcp-and-studio',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        void middleware(req, res, next)
+      })
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use((req, res, next) => {
+        void middleware(req, res, next)
+      })
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), ffmpegCoreAssetsPlugin()],
+  plugins: [react(), ffmpegCoreAssetsPlugin(), framerMcpAndStudioPlugin()],
+  server: {
+    host: true,
+    allowedHosts: true,
+    cors: true,
+  },
+  preview: {
+    host: true,
+    allowedHosts: true,
+    cors: true,
+  },
   optimizeDeps: {
     exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
   },

@@ -300,5 +300,28 @@ describe('ffmpegArgs', () => {
     })
     expect(extract720Args.join(' ')).toContain('fps=24,scale=')
     expect(extract720Args.join(' ')).toContain('flags=lanczos')
+
+    const mp4WithAudio = buildEncodeVideoArgs({
+      inputPattern: '/job/in/frame_%05d.png',
+      outputPath: '/job/output.mp4',
+      fps: 24,
+      format: 'mp4',
+      quality: 'high',
+      audioInputPath: '/job/audio.wav',
+    })
+    expect(mp4WithAudio).toContain('/job/audio.wav')
+    expect(mp4WithAudio).toContain('aac')
+    expect(mp4WithAudio).toContain('-shortest')
+
+    const webmWithAudio = buildEncodeVideoArgs({
+      inputPattern: '/job/in/frame_%05d.png',
+      outputPath: '/job/output.webm',
+      fps: 24,
+      format: 'webm',
+      quality: 'balanced',
+      audioInputPath: '/job/audio.mp3',
+    })
+    expect(webmWithAudio).toContain('libopus')
+    expect(webmWithAudio).toContain('-shortest')
   })
 })

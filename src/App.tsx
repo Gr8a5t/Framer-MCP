@@ -1,6 +1,7 @@
-import { FileArchive, Film, ShieldCheck } from 'lucide-react'
+import { FileArchive, Film, ShieldCheck, Sparkles } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
 import './App.css'
+import { ClaudeStudioPanel } from './components/ClaudeStudioPanel'
 import {
   type FramesToVideoHandle,
   FramesToVideoPanel,
@@ -14,10 +15,13 @@ export function App() {
   const [engineReady, setEngineReady] = useState(false)
   const framesToVideoRef = useRef<FramesToVideoHandle>(null)
 
-  const handleSendZipToVideo = useCallback((zipFile: File) => {
-    setActiveTab('frames-to-video')
-    void framesToVideoRef.current?.loadZipFile(zipFile)
-  }, [])
+  const handleSendZipToVideo = useCallback(
+    (zipFile: File, audioFile?: File) => {
+      setActiveTab('frames-to-video')
+      void framesToVideoRef.current?.loadZipFile(zipFile, audioFile)
+    },
+    [],
+  )
 
   return (
     <div className="app-shell">
@@ -35,6 +39,10 @@ export function App() {
         </div>
 
         <div className="topbar-status">
+          <span className="status-pill is-ready" title="Remote MCP endpoints /mcp & /sse active">
+            <span className="status-dot is-success" />
+            MCP Active
+          </span>
           <span className="status-pill">
             <ShieldCheck size={14} />
             100% Local &amp; Private
@@ -71,6 +79,16 @@ export function App() {
           <FileArchive size={17} />
           <span>Frames (.zip) → Video</span>
         </button>
+
+        <button
+          type="button"
+          className={`mode-tab ${activeTab === 'claude-studio' ? 'is-active' : ''}`}
+          onClick={() => setActiveTab('claude-studio')}
+          aria-pressed={activeTab === 'claude-studio'}
+        >
+          <Sparkles size={17} />
+          <span>Claude MCP &amp; Ad Studio</span>
+        </button>
       </nav>
 
       <main className="workspace-main">
@@ -89,6 +107,13 @@ export function App() {
             isBusy={isBusy}
             onBusyChange={setIsBusy}
             onEngineStatusChange={setEngineReady}
+          />
+        </div>
+
+        <div hidden={activeTab !== 'claude-studio'}>
+          <ClaudeStudioPanel
+            isBusy={isBusy}
+            onSendProjectToEditor={handleSendZipToVideo}
           />
         </div>
       </main>

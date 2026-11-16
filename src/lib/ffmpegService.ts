@@ -56,6 +56,7 @@ export interface EncodeVideoJobInput {
   format: OutputVideoFormat
   quality: VideoQualityPreset
   resolution?: ResolutionPreset
+  audioFile?: File | null
   onProgress?: (progress: EngineProgress) => void
   onEngineStatusChange?: (ready: boolean) => void
 }
@@ -454,6 +455,15 @@ export async function encodeFramesToVideo(
       }
     }
 
+    let audioInputPath: string | undefined
+    if (input.audioFile) {
+      const audioExt = getFileExtension(input.audioFile.name) || 'wav'
+      audioInputPath = `${jobDir}/audio.${audioExt}`
+      const audioBytes = new Uint8Array(await input.audioFile.arrayBuffer())
+      assertNotCancelled(jobId)
+      await ffmpeg.writeFile(audioInputPath, audioBytes)
+    }
+
     const args = buildEncodeVideoArgs({
       inputPattern,
       outputPath,
@@ -463,6 +473,7 @@ export async function encodeFramesToVideo(
       resolution,
       targetWidth: prepared.width,
       targetHeight: prepared.height,
+      audioInputPath,
     })
 
     input.onProgress?.({

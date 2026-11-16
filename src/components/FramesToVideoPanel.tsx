@@ -1,10 +1,13 @@
 import {
+  AudioLines,
   Download,
   FileArchive,
   Film,
+  Music,
   Play,
   RefreshCw,
   Sparkles,
+  Trash2,
 } from 'lucide-react'
 import {
   type Ref,
@@ -12,6 +15,7 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import { triggerBytesDownload } from '../lib/download'
@@ -31,8 +35,10 @@ import {
   sanitizeBaseName,
 } from '../lib/format'
 import { inspectFramesDimensions } from '../lib/imageNormalize'
+import { analyzeAudioTrack } from '../lib/studioApi'
 import { extractFramesFromZip, toFrameItems } from '../lib/zipFrames'
 import type {
+  AudioTrackAttachment,
   EngineProgress,
   GeneratedVideoResult,
   LoadedZipFrames,
@@ -45,7 +51,7 @@ import { FrameGallery } from './FrameGallery'
 import { ProgressBanner } from './ProgressBanner'
 
 export interface FramesToVideoHandle {
-  loadZipFile: (file: File) => Promise<void>
+  loadZipFile: (file: File, audioFile?: File) => Promise<void>
 }
 
 interface FramesToVideoPanelProps {
@@ -93,6 +99,10 @@ export function FramesToVideoPanel({
 
   const [progress, setProgress] = useState<EngineProgress>(IDLE_PROGRESS)
   const [result, setResult] = useState<GeneratedVideoResult | null>(null)
+  const [audioTrack, setAudioTrack] = useState<AudioTrackAttachment | null>(null)
+  const [isAnalyzingAudio, setIsAnalyzingAudio] = useState(false)
+  const [audioError, setAudioError] = useState<string | null>(null)
+  const audioInputRef = useRef<HTMLInputElement>(null)
 
   const resultVideoUrl = useMemo(() => {
     if (!result) return null
@@ -108,7 +118,7 @@ export function FramesToVideoPanel({
     }
   }, [resultVideoUrl])
 
-  const loadZipFile = useCallback(async (file: File) => {
+  const loadZipFile = useCallback(async (file: File, attachedAudio?: File) => {
     const ext = getFileExtension(file.name)
     const buffer = await file.arrayBuffer()
     const bytes = new Uint8Array(buffer)
@@ -127,8 +137,17 @@ export function FramesToVideoPanel({
 
     setUploadError(null)
     setJobError(null)
+    setAudioError(null)
     setResult(null)
     setIsReadingZip(true)
+    if (attachedAudio) {
+      setAudioTrack({
+        file: attachedAudio,
+        name: attachedAudio.name,
+        size: attachedAudio.size,
+        flow: null,
+      })
+    }
 
     try {
       const unpacked = await extractFramesFromZip(bytes)
@@ -191,6 +210,34 @@ export function FramesToVideoPanel({
     setResult(null)
   }
 
+  const handleAudioSelected = (file: File) => {
+    setAudioError(null)
+    setAudioTrack({
+      file,
+      name: file.name,
+      size: file.size,
+      flow: null,
+    })
+  }
+
+  const handleAnalyzeAttachedAudio = async () => {
+    if (!audioTrack || isAnalyzingAudio) return
+    setAudioError(null)
+    setIsAnalyzingAudio(true)
+    try {
+      const analyzed = await analyzeAudioTrack(audioTrack.file)
+      setAudioTrack((prev) =>
+        prev ? { ...prev, flow: analyzed.summary } : prev,
+      )
+    } catch (error) {
+      setAudioError(
+        formatErrorMessage(error, 'Could not analyze attached audio flow.'),
+      )
+    } finally {
+      setIsAnalyzingAudio(false)
+    }
+  }
+
   const handleBuildVideo = async () => {
     if (!loadedZip || isBusy || isReadingZip) return
 
@@ -205,6 +252,7 @@ export function FramesToVideoPanel({
         format: videoFormat,
         quality,
         resolution,
+        audioFile: audioTrack?.file ?? null,
         onProgress: setProgress,
         onEngineStatusChange,
       })
@@ -227,6 +275,7 @@ export function FramesToVideoPanel({
         durationSec: output.durationSec,
         width: output.width,
         height: output.height,
+        hasAudio: Boolean(audioTrack),
       })
     } catch (error) {
       if (!(error instanceof JobCancelledError)) {
@@ -469,6 +518,95 @@ export function FramesToVideoPanel({
               </div>
             </div>
 
+            <div className="control-group">
+              <div className="control-label-row">
+                <label className="control-label">
+                  Optional Audio / Music Mix
+                </label>
+                {audioTrack ? (
+                  <span className="mono-pill">
+                    {formatBytes(audioTrack.size)}
+                  </span>
+                ) : null}
+              </div>
+
+              <input
+                ref={audioInputRef}
+                type="file"
+                accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac"
+                className="sr-only"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) handleAudioSelected(file)
+                  e.currentTarget.value = ''
+                }}
+              />
+
+              {!audioTrack ? (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={isBusy}
+                  onClick={() => audioInputRef.current?.click()}
+                >
+                  <Music size={15} />
+                  Attach Music / Voiceover (.wav, .mp3, .m4a)
+                </button>
+              ) : (
+                <div className="audio-attach-box">
+                  <div className="audio-attach-row">
+                    <span className="meta-filename" title={audioTrack.name}>
+                      {audioTrack.name}
+                    </span>
+                    <div className="spec-row">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={isBusy || isAnalyzingAudio}
+                        onClick={() => void handleAnalyzeAttachedAudio()}
+                      >
+                        <AudioLines size={14} />
+                        {isAnalyzingAudio ? 'Analyzing…' : 'Analyze Flow'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={isBusy}
+                        onClick={() => setAudioTrack(null)}
+                        title="Remove audio track"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                  {audioTrack.flow ? (
+                    <div className="audio-flow-preview">
+                      <div className="spec-row">
+                        <span className="spec-chip">{audioTrack.flow.bpm} BPM</span>
+                        <span className="spec-chip">
+                          {formatDuration(audioTrack.flow.durationSec)}
+                        </span>
+                        <span className="spec-chip">
+                          {audioTrack.flow.cues.length} cues
+                        </span>
+                      </div>
+                      {audioTrack.flow.flowImageUrl ? (
+                        <img
+                          src={audioTrack.flow.flowImageUrl}
+                          alt="Attached track flow spectrogram"
+                          className="flow-spectrogram-img"
+                        />
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {audioError ? (
+                <div className="alert-banner is-error">{audioError}</div>
+              ) : null}
+            </div>
+
             <div className="action-footer">
               <button
                 type="button"
@@ -511,6 +649,9 @@ export function FramesToVideoPanel({
                     {formatDuration(result.durationSec)}
                   </span>
                   <span className="spec-chip">{formatBytes(result.size)}</span>
+                  {result.hasAudio ? (
+                    <span className="spec-chip">With Audio</span>
+                  ) : null}
                 </div>
               </div>
             </div>
